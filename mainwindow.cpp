@@ -16,11 +16,11 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionRun, &QAction::triggered, this, &MainWindow::actionRun);
     connect(ui->actionExit, &QAction::triggered, this, &MainWindow::actionExit);
 
-    settings.x_coord_size = 10;
-    settings.y_coord_size = 10;
-    settings.node_selector_method = AStar::NodeSelectorFirst;
+    settings.x_coord_size = 50;
+    settings.y_coord_size = 50;
+    settings.node_selector_method = AStar::NodeSelectorLowestPriorityMap;
     settings.start_point = QPoint(1, 1);
-    settings.goal_point = QPoint(8, 8);
+    settings.goal_point = QPoint(48, 48);
 }
 
 MainWindow::~MainWindow()
@@ -53,7 +53,9 @@ void MainWindow::do_aStar()
     aStar.set_node_selector_method(settings.node_selector_method);
 
     qDebug() << "_________________________________________________________________________________________________________________";
-    qDebug() << settings.x_coord_size << "x" << settings.y_coord_size << "," << settings.start_point << "->" << settings.goal_point;
+    qDebug() << settings.x_coord_size << "x" << settings.y_coord_size
+             << "," << settings.start_point << "->" << settings.goal_point
+             << "," << settings.node_selector_method;
 
     QElapsedTimer elapsed;
     elapsed.start();

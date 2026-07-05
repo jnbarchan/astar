@@ -3,6 +3,7 @@
 
 #include <QHash>
 #include <QList>
+#include <QMap>
 #include <QObject>
 #include <QPoint>
 #include <QSet>
@@ -34,16 +35,19 @@ inline size_t qHash(const Node &key, size_t seed)
 }
 
 typedef QSet<Node> NodeSet;
+typedef QMap<int, NodeSet> NodePriorityMap;
 typedef QHash<Node, int> NodeCost;
 typedef QHash<Node, Node> CameFrom;
 
+class OpenSet;
 class AStar : public QObject
 {
     Q_OBJECT
 public:
     explicit AStar(QObject *parent = nullptr);
 
-    enum NodeSelectorMethod { NodeSelectorFirst, NodeSelectorLowest, };
+    enum NodeSelectorMethod { NodeSelectorFirst, NodeSelectorLowestSequential, NodeSelectorLowestPriorityMap, };
+    Q_ENUM(NodeSelectorMethod);
 
     void set_coord_sizes(int x, int y);
     void set_node_selector_method(NodeSelectorMethod nodeSelectorMethod);
@@ -53,7 +57,8 @@ signals:
 
 private:
     int x_coord_size, y_coord_size;
-    typedef Node (AStar::*NodeSelector)(const NodeSet &, const NodeCost &) const;
+    NodeSelectorMethod nodeSelectorMethod;
+    typedef Node (AStar::*NodeSelector)(const OpenSet &, const NodeCost &) const;
     NodeSelector nodeSelector;
     mutable struct Stats {
         int iterations;
@@ -70,10 +75,31 @@ private:
     QList<Node> reconstruct_path(const CameFrom &came_from, const Node &reached) const;
     void report_stats() const;
     int heuristic(const Node &reached, const QPoint &goalCoords) const;
-    Node node_first_f_score(const NodeSet &open_set, const NodeCost &f_score) const;
-    Node node_lowest_f_score(const NodeSet &open_set, const NodeCost &f_score) const;
+    Node node_first_f_score(const OpenSet &open_set, const NodeCost &f_score) const;
+    Node node_lowest_sequential_f_score(const OpenSet &open_set, const NodeCost &f_score) const;
+    Node node_lowest_priority_map_f_score(const OpenSet &open_set, const NodeCost &f_score) const;
     QList<Node> get_neighbors(const Node &node) const;
     bool neighbor_traversable(const Node &from, const Node &to) const;
+};
+
+class OpenSet
+{
+public:
+    explicit OpenSet(AStar::NodeSelectorMethod node_selector_method);
+
+    const NodeSet &set() const;
+    const NodePriorityMap priority_map() const;
+
+    int count() const;
+    bool isEmpty() const;
+    bool contains(const Node &node, int f_score) const;
+    void add(const Node &node, int f_score);
+    bool remove(const Node &node, int f_score);
+
+private:
+    AStar::NodeSelectorMethod node_selector_method;
+    NodeSet _set;
+    NodePriorityMap _priority_map;
 };
 
 #endif // ASTAR_H

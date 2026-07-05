@@ -5,10 +5,12 @@
 
 #include "astar.h"
 
+
 AStar::AStar(QObject *parent)
     : QObject{parent}
 {
     x_coord_size = y_coord_size = 0;
+    nodeSelectorMethod = AStar::NodeSelectorFirst;
     nodeSelector = &AStar::node_first_f_score;
 }
 
@@ -23,9 +25,11 @@ void AStar::set_node_selector_method(NodeSelectorMethod nodeSelectorMethod)
     switch (nodeSelectorMethod)
     {
     case NodeSelectorFirst: nodeSelector = &AStar::node_first_f_score; break;
-    case NodeSelectorLowest: nodeSelector = &AStar::node_lowest_f_score; break;
+    case NodeSelectorLowestSequential: nodeSelector = &AStar::node_lowest_sequential_f_score; break;
+    case NodeSelectorLowestPriorityMap: nodeSelector = &AStar::node_lowest_priority_map_f_score; break;
     default: Q_ASSERT(false);
     }
+    this->nodeSelectorMethod = nodeSelectorMethod;
 }
 
 // A* finds a path from start to goal.
@@ -36,13 +40,7 @@ QList<Node> AStar::find_path(const QPoint &startCoords, const QPoint &goalCoords
     if (!rect.contains(startCoords) || !rect.contains(goalCoords))
         return QList<Node>();
 
-    // // The set of discovered nodes that may need to be (re-)expanded.
-    // // Initially, only the start node is known.
-    // // This is usually implemented as a min-heap or priority queue rather than a hash-set.
-    // open_set := {start}
-    NodeSet open_set;
     Node start(startCoords);
-    open_set += start;
 
     // // For node n, came_from[n] is the node immediately preceding it on the cheapest path from the start
     // // to n currently known.
@@ -61,6 +59,13 @@ QList<Node> AStar::find_path(const QPoint &startCoords, const QPoint &goalCoords
     // f_score[start] := h(start)
     NodeCost f_score;
     f_score[start] = heuristic(start, goalCoords);
+
+    // // The set of discovered nodes that may need to be (re-)expanded.
+    // // Initially, only the start node is known.
+    // // This is usually implemented as a min-heap or priority queue rather than a hash-set.
+    // open_set := {start}
+    OpenSet open_set(nodeSelectorMethod);
+    open_set.add(start, f_score[start]);
 
     // while open_set is not empty
     //     // This operation can occur in O(Log(N)) time if open_set is a min-heap or a priority queue
@@ -99,10 +104,14 @@ QList<Node> AStar::find_path(const QPoint &startCoords, const QPoint &goalCoords
             return reconstruct_path(came_from, current);
         }
 
-        open_set.remove(current);
-
         Q_ASSERT(g_score.contains(current));
+        Q_ASSERT(f_score.contains(current));
         int g_score_current = g_score.value(current);
+        int f_score_current = f_score.value(current);
+
+        bool removed = open_set.remove(current, f_score_current);
+        Q_ASSERT(removed);
+
         QList<Node> neighbors = get_neighbors(current);
         for (const Node &neighbor : neighbors)
         {
@@ -114,16 +123,18 @@ QList<Node> AStar::find_path(const QPoint &startCoords, const QPoint &goalCoords
             int g_score_neighbor = g_score.value(neighbor, INT_MAX);
             if (tentative_g_score < g_score_neighbor)
             {
+                int tentative_f_score = tentative_g_score + heuristic(neighbor, goalCoords);
+                int f_score_neighbor = f_score.value(neighbor, INT_MAX);
                 came_from[neighbor] = current;
                 g_score[neighbor] = tentative_g_score;
-                f_score[neighbor] = tentative_g_score + heuristic(neighbor, goalCoords);
-                if (!open_set.contains(neighbor))
-                {
-                    open_set += neighbor;
-                    stats.total_open_set_count++;
-                    if (open_set.count() > stats.longest_open_set_count)
-                        stats.longest_open_set_count = open_set.count();
-                }
+                f_score[neighbor] = tentative_f_score;
+                if (f_score_neighbor != INT_MAX)
+                    open_set.remove(neighbor, f_score_neighbor);
+                open_set.add(neighbor, tentative_f_score);
+                stats.total_open_set_count++;
+                int open_set_count = open_set.count();
+                if (open_set_count > stats.longest_open_set_count)
+                    stats.longest_open_set_count = open_set_count;
             }
         }
     }
@@ -165,20 +176,24 @@ int AStar::heuristic(const Node &reached, const QPoint &goalCoords) const
     return delta.manhattanLength();
 }
 
-Node AStar::node_first_f_score(const NodeSet &open_set, const NodeCost &f_score) const
+Node AStar::node_first_f_score(const OpenSet &open_set, const NodeCost &f_score) const
 {
+    const NodeSet &set(open_set.set());
     Q_UNUSED(f_score);
-    auto it = open_set.cbegin();
+    auto it = set.cbegin();
     Node lowest = *it;
     Q_ASSERT(f_score.contains(lowest));
+    stats.node_lowest_f_score_count++;
     return lowest;
 }
 
-Node AStar::node_lowest_f_score(const NodeSet &open_set, const NodeCost &f_score) const
+Node AStar::node_lowest_sequential_f_score(const OpenSet &open_set, const NodeCost &f_score) const
 {
-    auto it = open_set.cbegin(), end = open_set.cend();
+    const NodeSet &set(open_set.set());
+    auto it = set.cbegin(), end = set.cend();
     Node lowest = *it;
     Q_ASSERT(f_score.contains(lowest));
+    stats.node_lowest_f_score_count++;
     while (++it != end)
     {
         stats.node_lowest_f_score_count++;
@@ -189,6 +204,19 @@ Node AStar::node_lowest_f_score(const NodeSet &open_set, const NodeCost &f_score
             lowest = node;
     }
     return lowest;
+}
+
+Node AStar::node_lowest_priority_map_f_score(const OpenSet &open_set, const NodeCost &f_score) const
+{
+    const NodePriorityMap &priority_map(open_set.priority_map());
+    for (auto it = priority_map.cbegin(), end = priority_map.cend(); it != end; it++)
+    {
+        stats.node_lowest_f_score_count++;
+        if (!it->isEmpty())
+            return *it->cbegin();
+    }
+    Q_ASSERT(false);
+    return Node();
 }
 
 QList<Node> AStar::get_neighbors(const Node &node) const
@@ -214,4 +242,102 @@ QList<Node> AStar::get_neighbors(const Node &node) const
 bool AStar::neighbor_traversable(const Node &from, const Node &to) const
 {
     return true;
+}
+
+
+OpenSet::OpenSet(AStar::NodeSelectorMethod node_selector_method)
+{
+    this->node_selector_method = node_selector_method;
+}
+
+const NodeSet &OpenSet::set() const
+{
+    return _set;
+}
+
+const NodePriorityMap OpenSet::priority_map() const
+{
+    return _priority_map;
+}
+
+int OpenSet::count() const
+{
+    switch (node_selector_method)
+    {
+    case AStar::NodeSelectorFirst:
+    case AStar::NodeSelectorLowestSequential:
+        return _set.count();
+    case AStar::NodeSelectorLowestPriorityMap: {
+        int total = 0;
+        for (auto it = _priority_map.cbegin(), end = _priority_map.end(); it != end; it++)
+            total += it->count();
+        return total;
+    }
+    }
+    __builtin_unreachable();
+}
+
+bool OpenSet::isEmpty() const
+{
+    switch (node_selector_method)
+    {
+    case AStar::NodeSelectorFirst:
+    case AStar::NodeSelectorLowestSequential:
+        return _set.isEmpty();
+    case AStar::NodeSelectorLowestPriorityMap: {
+        for (auto it = _priority_map.cbegin(), end = _priority_map.end(); it != end; it++)
+            if (it->count() != 0)
+                return false;
+        return true;
+    }
+    }
+    __builtin_unreachable();
+}
+
+bool OpenSet::contains(const Node &node, int f_score) const
+{
+    switch (node_selector_method)
+    {
+    case AStar::NodeSelectorFirst:
+    case AStar::NodeSelectorLowestSequential:
+        Q_UNUSED(f_score);
+        return _set.contains(node);
+    case AStar::NodeSelectorLowestPriorityMap:
+        return _priority_map.value(f_score).contains(node);
+    }
+    __builtin_unreachable();
+}
+
+void OpenSet::add(const Node &node, int f_score)
+{
+    switch (node_selector_method)
+    {
+    case AStar::NodeSelectorFirst:
+    case AStar::NodeSelectorLowestSequential:
+        Q_UNUSED(f_score);
+        _set.insert(node); break;
+    case AStar::NodeSelectorLowestPriorityMap:
+        _priority_map[f_score].insert(node);
+        break;
+    }
+}
+
+bool OpenSet::remove(const Node &node, int f_score)
+{
+    switch (node_selector_method)
+    {
+    case AStar::NodeSelectorFirst:
+    case AStar::NodeSelectorLowestSequential:
+        Q_UNUSED(f_score);
+        return _set.remove(node);
+    case AStar::NodeSelectorLowestPriorityMap:
+        if (!_priority_map.contains(f_score))
+            return false;
+        if (!_priority_map[f_score].remove(node))
+            return false;
+        if (_priority_map[f_score].isEmpty())
+            _priority_map.remove(f_score);
+        return true;
+    }
+    __builtin_unreachable();
 }

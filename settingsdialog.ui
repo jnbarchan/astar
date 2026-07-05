@@ -73,7 +73,7 @@
       </widget>
      </item>
      <item row="1" column="1">
-      <layout class="QHBoxLayout" name="horizontalLayout">
+      <layout class="QHBoxLayout" name="horizontalLayout_1">
        <item>
         <widget class="QSpinBox" name="start_point_x">
          <property name="sizePolicy">

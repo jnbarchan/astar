@@ -16,7 +16,8 @@ SettingsDialog::SettingsDialog(Settings &settings, QWidget *parent)
     ui->goal_point_y->setValue(settings.goal_point.y());
     ui->node_selector_method->clear();
     ui->node_selector_method->addItem("node_first_f_score", AStar::NodeSelectorFirst);
-    ui->node_selector_method->addItem("node_lowest_f_score", AStar::NodeSelectorLowest);
+    ui->node_selector_method->addItem("node_lowest_sequential_f_score", AStar::NodeSelectorLowestSequential);
+    ui->node_selector_method->addItem("node_lowest_priority_map_f_score", AStar::NodeSelectorLowestPriorityMap);
     int index = ui->node_selector_method->findData(settings.node_selector_method);
     if (index != -1)
         ui->node_selector_method->setCurrentIndex(index);

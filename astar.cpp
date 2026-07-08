@@ -119,6 +119,7 @@ bool OpenSet::remove(const Node &node, int f_score)
 AStar::AStar(QObject *parent)
     : QObject{parent}
 {
+    edge_length = 1000;
     x_coord_size = y_coord_size = 0;
     nodeSelectorMethod = AStar::NodeSelectorFirst;
     nodeSelector = &AStar::node_first_f_score;
@@ -142,6 +143,11 @@ void AStar::set_coord_sizes(int x, int y)
 {
     x_coord_size = x;
     y_coord_size = y;
+}
+
+void AStar::set_edge_length(int new_edge_length)
+{
+    edge_length = new_edge_length;
 }
 
 void AStar::set_node_selector_method(NodeSelectorMethod nodeSelectorMethod)
@@ -176,7 +182,7 @@ NodeList AStar::find_path(const QPoint &startCoords, const QPoint &goalCoords)
     start_coords = startCoords;
     goal_coords = goalCoords;
 
-    async_timer.stop();
+    async_timer_stop();
 
     // initialise
     if (!find_path_start())
@@ -198,20 +204,32 @@ void AStar::find_path_async(const QPoint &startCoords, const QPoint &goalCoords)
     start_coords = startCoords;
     goal_coords = goalCoords;
 
-    async_timer.stop();
+    async_timer_stop();
 
     // initialise
     if (!find_path_start())
         return;
 
     // start async timer, calling async_timer_timeout()
-    async_timer.start();
+    async_timer_start();
 }
 
 void AStar::cancel_find_path_async()
 {
-    // stop async timer
+    async_timer_stop();
+}
+
+void AStar::async_timer_start()
+{
+    // start async timer, calling async_timer_timeout()
+    async_timer.start();
+    emit findPathAsyncStarted();
+}
+
+void AStar::async_timer_stop()
+{
     async_timer.stop();
+    emit findPathAsyncStopped();
 }
 
 void AStar::async_timer_timeout()
@@ -225,7 +243,7 @@ void AStar::async_timer_timeout()
     }
 
     // stop async timer
-    async_timer.stop();
+    async_timer_stop();
 
     // finished finding path
     find_path_finish();
@@ -354,7 +372,7 @@ void AStar::find_path_step()
         NodeList neighbors = get_neighbors(current_node);
         for (const Node &neighbor : neighbors)
         {
-            int tentative_g_score = g_score_current + 1;
+            int tentative_g_score = g_score_current + edge_length;
             int g_score_neighbor = g_score.value(neighbor, INT_MAX);
             if (tentative_g_score < g_score_neighbor)
             {
@@ -438,19 +456,19 @@ int AStar::heuristic_dijkstra(const Node &reached, const QPoint &goalCoords) con
 int AStar::heuristic_manhattan(const Node &reached, const QPoint &goalCoords) const
 {
     QPoint delta(goalCoords - reached.coords);
-    return delta.manhattanLength();
+    return delta.manhattanLength() * edge_length;
 }
 
 int AStar::heuristic_euclidean(const Node &reached, const QPoint &goalCoords) const
 {
     QPoint delta(goalCoords - reached.coords);
-    return std::lround(std::hypot(delta.x(), delta.y()));
+    return std::lround(std::hypot(delta.x(), delta.y()) * edge_length);
 }
 
 int AStar::heuristic_euclidean_weighted(const Node &reached, const QPoint &goalCoords) const
 {
     QPoint delta(goalCoords - reached.coords);
-    return 2 * std::lround(std::hypot(delta.x(), delta.y()));
+    return 2 * std::lround(std::hypot(delta.x(), delta.y()) * edge_length);
 }
 
 Node AStar::node_first_f_score() const
@@ -493,21 +511,11 @@ Node AStar::node_lowest_priority_map_f_score() const
             continue;
         auto it2 = set.cbegin();
         auto best = *it2;
-        if (false)  // algorithm just picks first Node in set
-            return best;
-        else  // algorithm picks Node with longest g_score
-        {
-            while (++it2 != set.cend())
-                if (g_score[*it2] > g_score[best])
-                    best = *it2;
-                else if (g_score[*it2] == g_score[best])
-                {
-                    //TEMPORARY
-                    if (it2->coords.y() < best.coords.y())
-                        best = *it2;
-                }
-            return best;
-        }
+        // algorithm picks Node with longest g_score
+        while (++it2 != set.cend())
+            if (g_score[*it2] > g_score[best])
+                best = *it2;
+        return best;
     }
     Q_ASSERT(false);
     return Node();

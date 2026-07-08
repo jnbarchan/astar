@@ -84,6 +84,7 @@ public:
     bool show_progress() const;
     void setShow_progress(bool newShow_progress);
     void set_coord_sizes(int x, int y);
+    void set_edge_length(int new_edge_length);
     void set_node_selector_method(NodeSelectorMethod nodeSelectorMethod);
     void set_node_selector_heuristic_method(NodeSelectorHeuristicMethod nodeSelectorHeuristicMethod);
     NodeList find_path(const QPoint &startCoords, const QPoint &goalCoords);
@@ -91,6 +92,8 @@ public:
     void cancel_find_path_async();
 
 signals:
+    void findPathAsyncStarted();
+    void findPathAsyncStopped();
     void nodeStatusChanged(Node node, NodeState state);
 
 private slots:
@@ -98,6 +101,7 @@ private slots:
 
 private:
     bool _show_progress;
+    int edge_length;
     int x_coord_size, y_coord_size;
     NodeSelectorMethod nodeSelectorMethod;
     typedef Node (AStar::*NodeSelector)() const;
@@ -127,7 +131,10 @@ private:
 
     QTimer async_timer;
 
+    void async_timer_start();
+    void async_timer_stop();
     void emit_node_status_changed(const Node &node, NodeState state);
+
     bool find_path_start();
     void find_path_step();
     bool find_path_is_finished();

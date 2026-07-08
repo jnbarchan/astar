@@ -27,13 +27,16 @@ MainWindow::MainWindow(QWidget *parent)
 
     settings.x_coord_size = 20;
     settings.y_coord_size = 20;
-    settings.node_selector_method = AStar::NodeSelectorLowestPriorityMap;
-    settings.node_selector_heuristic_method = AStar::NodeSelectorHeuristicEuclideanWeighted;
     settings.start_point = QPoint(1, 1);
     settings.goal_point = QPoint(settings.x_coord_size - 2, settings.x_coord_size - 2);
+    settings.edge_length = 1000;
+    settings.node_selector_method = AStar::NodeSelectorLowestPriorityMap;
+    settings.node_selector_heuristic_method = AStar::NodeSelectorHeuristicEuclideanWeighted;
 
     setAStarSceneFromSettings();
 
+    connect(&aStar, &AStar::findPathAsyncStarted, this, [this]() { setRunning_async(true); } );
+    connect(&aStar, &AStar::findPathAsyncStopped, this, [this]() { setRunning_async(false); } );
     setRunning_async(false);
 }
 
@@ -79,9 +82,11 @@ void MainWindow::actionRun_Animation()
 {
     if (running_async())
     {
+        // Stop
         setRunning_async(false);
         return;
     }
+    // Run
     setRunning_async(true);
     do_aStar_async();
 }
@@ -100,9 +105,10 @@ bool MainWindow::running_async() const
 
 void MainWindow::setRunning_async(bool newRunning_async)
 {
-    if (_running_async && !newRunning_async)
-        aStar.cancel_find_path_async();
+    bool was_running_async = _running_async;
     _running_async = newRunning_async;
+    if (was_running_async && !newRunning_async)
+        aStar.cancel_find_path_async();
     ui->actionRun_Animation->setText(_running_async ? "Stop" : "Run Animation");
 }
 
@@ -110,6 +116,7 @@ void MainWindow::do_aStar_init(bool show_progress)
 {
     aStar.setShow_progress(show_progress);
     aStar.set_coord_sizes(settings.x_coord_size, settings.y_coord_size);
+    aStar.set_edge_length(settings.edge_length);
     aStar.set_node_selector_method(settings.node_selector_method);
     aStar.set_node_selector_heuristic_method(settings.node_selector_heuristic_method);
 
@@ -118,7 +125,7 @@ void MainWindow::do_aStar_init(bool show_progress)
     qDebug() << "_________________________________________________________________________________________________________________";
     qDebug() << settings.x_coord_size << "x" << settings.y_coord_size
              << "," << settings.start_point << "->" << settings.goal_point
-             << "," << settings.node_selector_method << "," << settings.node_selector_heuristic_method;
+             << "," << settings.node_selector_method << "," << settings.node_selector_heuristic_method << "," << settings.edge_length;
 }
 
 void MainWindow::do_aStar_sync()

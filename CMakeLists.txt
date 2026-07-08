@@ -25,6 +25,8 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         ${PROJECT_SOURCES}
         astar.h astar.cpp
         settingsdialog.h settingsdialog.cpp settingsdialog.ui
+        astargraphicsscene.h astargraphicsscene.cpp
+        astargraphicsview.h astargraphicsview.cpp
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET astar APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR

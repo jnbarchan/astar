@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QPoint>
 #include <QSet>
+#include <QTimer>
 
 struct Node
 {
@@ -34,12 +35,38 @@ inline size_t qHash(const Node &key, size_t seed)
     return (key.coords.x() & 0xffff) | ((key.coords.y() & 0xffff) << 16);
 }
 
+typedef QList<Node> NodeList;
 typedef QSet<Node> NodeSet;
 typedef QMap<int, NodeSet> NodePriorityMap;
 typedef QHash<Node, int> NodeCost;
 typedef QHash<Node, Node> CameFrom;
 
-class OpenSet;
+class OpenSet
+{
+public:
+    explicit OpenSet();
+
+    enum Implementation { ImplementationSet, ImplementationPriorityMap, };
+
+    const NodeSet &set() const;
+    const NodePriorityMap priority_map() const;
+
+    int count() const;
+    bool isEmpty() const;
+    bool contains(const Node &node, int f_score) const;
+    void clear();
+    void add(const Node &node, int f_score);
+    bool remove(const Node &node, int f_score);
+
+    Implementation implementation() const;
+    void setImplementation(Implementation newImplementation);
+
+private:
+    Implementation _implementation;
+    NodeSet _set;
+    NodePriorityMap _priority_map;
+};
+
 class AStar : public QObject
 {
     Q_OBJECT
@@ -48,18 +75,38 @@ public:
 
     enum NodeSelectorMethod { NodeSelectorFirst, NodeSelectorLowestSequential, NodeSelectorLowestPriorityMap, };
     Q_ENUM(NodeSelectorMethod);
+    enum NodeSelectorHeuristicMethod { NodeSelectorHeuristicDijkstra, NodeSelectorHeuristicManhattan, NodeSelectorHeuristicEuclidean, NodeSelectorHeuristicEuclideanWeighted, };
+    Q_ENUM(NodeSelectorHeuristicMethod);
+    enum NodeState { StateRemoved, StateCurrent, StateOpen, StateClosed, StatePath };
+    Q_ENUM(NodeState);
+    enum FindPathStep { StepPickCurrent, StepAddNeighbors };
 
+    bool show_progress() const;
+    void setShow_progress(bool newShow_progress);
     void set_coord_sizes(int x, int y);
     void set_node_selector_method(NodeSelectorMethod nodeSelectorMethod);
-    QList<Node> find_path(const QPoint &startCoords, const QPoint &goalCoords) const;
+    void set_node_selector_heuristic_method(NodeSelectorHeuristicMethod nodeSelectorHeuristicMethod);
+    NodeList find_path(const QPoint &startCoords, const QPoint &goalCoords);
+    void find_path_async(const QPoint &startCoords, const QPoint &goalCoords);
+    void cancel_find_path_async();
 
 signals:
+    void nodeStatusChanged(Node node, NodeState state);
+
+private slots:
+    void async_timer_timeout();
 
 private:
+    bool _show_progress;
     int x_coord_size, y_coord_size;
     NodeSelectorMethod nodeSelectorMethod;
-    typedef Node (AStar::*NodeSelector)(const OpenSet &, const NodeCost &) const;
+    typedef Node (AStar::*NodeSelector)() const;
     NodeSelector nodeSelector;
+    NodeSelectorHeuristicMethod nodeSelectorHeuristicMethod;
+    typedef int (AStar::*NodeSelectorHeuristic)(const Node &reached, const QPoint &goalCoords) const;
+    NodeSelectorHeuristic nodeSelectorHeuristic;
+    FindPathStep findPathNextStep;
+
     mutable struct Stats {
         int iterations;
         int longest_open_set_count;
@@ -72,34 +119,32 @@ private:
         }
     } stats;
 
-    QList<Node> reconstruct_path(const CameFrom &came_from, const Node &reached) const;
+    CameFrom came_from;
+    NodeCost g_score, f_score;
+    OpenSet open_set;
+    QPoint start_coords, goal_coords;
+    Node current_node;
+
+    QTimer async_timer;
+
+    void emit_node_status_changed(const Node &node, NodeState state);
+    bool find_path_start();
+    void find_path_step();
+    bool find_path_is_finished();
+    void find_path_finish();
+    NodeList find_path_result();
+
+    NodeList reconstruct_path(const Node &reached) const;
     void report_stats() const;
-    int heuristic(const Node &reached, const QPoint &goalCoords) const;
-    Node node_first_f_score(const OpenSet &open_set, const NodeCost &f_score) const;
-    Node node_lowest_sequential_f_score(const OpenSet &open_set, const NodeCost &f_score) const;
-    Node node_lowest_priority_map_f_score(const OpenSet &open_set, const NodeCost &f_score) const;
-    QList<Node> get_neighbors(const Node &node) const;
+    int heuristic_dijkstra(const Node &reached, const QPoint &goalCoords) const;
+    int heuristic_manhattan(const Node &reached, const QPoint &goalCoords) const;
+    int heuristic_euclidean(const Node &reached, const QPoint &goalCoords) const;
+    int heuristic_euclidean_weighted(const Node &reached, const QPoint &goalCoords) const;
+    Node node_first_f_score() const;
+    Node node_lowest_sequential_f_score() const;
+    Node node_lowest_priority_map_f_score() const;
+    NodeList get_neighbors(const Node &node) const;
     bool neighbor_traversable(const Node &from, const Node &to) const;
-};
-
-class OpenSet
-{
-public:
-    explicit OpenSet(AStar::NodeSelectorMethod node_selector_method);
-
-    const NodeSet &set() const;
-    const NodePriorityMap priority_map() const;
-
-    int count() const;
-    bool isEmpty() const;
-    bool contains(const Node &node, int f_score) const;
-    void add(const Node &node, int f_score);
-    bool remove(const Node &node, int f_score);
-
-private:
-    AStar::NodeSelectorMethod node_selector_method;
-    NodeSet _set;
-    NodePriorityMap _priority_map;
 };
 
 #endif // ASTAR_H

@@ -14,6 +14,7 @@ SettingsDialog::SettingsDialog(Settings &settings, QWidget *parent)
     ui->start_point_y->setValue(settings.start_point.y());
     ui->goal_point_x->setValue(settings.goal_point.x());
     ui->goal_point_y->setValue(settings.goal_point.y());
+
     ui->node_selector_method->clear();
     ui->node_selector_method->addItem("node_first_f_score", AStar::NodeSelectorFirst);
     ui->node_selector_method->addItem("node_lowest_sequential_f_score", AStar::NodeSelectorLowestSequential);
@@ -21,6 +22,21 @@ SettingsDialog::SettingsDialog(Settings &settings, QWidget *parent)
     int index = ui->node_selector_method->findData(settings.node_selector_method);
     if (index != -1)
         ui->node_selector_method->setCurrentIndex(index);
+
+    ui->node_selector_heuristic_method->clear();
+    ui->node_selector_heuristic_method->addItem("heuristic_dijkstra", AStar::NodeSelectorHeuristicDijkstra);
+    ui->node_selector_heuristic_method->addItem("heuristic_manhattan", AStar::NodeSelectorHeuristicManhattan);
+    ui->node_selector_heuristic_method->addItem("heuristic_euclidean", AStar::NodeSelectorHeuristicEuclidean);
+    ui->node_selector_heuristic_method->addItem("heuristic_euclidean_weighted", AStar::NodeSelectorHeuristicEuclideanWeighted);
+    index = ui->node_selector_heuristic_method->findData(settings.node_selector_heuristic_method);
+    if (index != -1)
+        ui->node_selector_heuristic_method->setCurrentIndex(index);
+
+    connect(ui->x_coord_size, &QSpinBox::editingFinished, this, [this]() { int x = ui->x_coord_size->value() - 1; ui->start_point_x->setMaximum(x); ui->goal_point_x->setMaximum(x); } );
+    connect(ui->y_coord_size, &QSpinBox::editingFinished, this, [this]() { int y = ui->y_coord_size->value() - 1; ui->start_point_y->setMaximum(y); ui->goal_point_y->setMaximum(y); } );
+    connect(ui->node_selector_method, &QComboBox::currentIndexChanged, this, &SettingsDialog::onNodeSelectorMethodChanged);
+
+    onNodeSelectorMethodChanged();
 }
 
 SettingsDialog::~SettingsDialog()
@@ -37,6 +53,12 @@ void SettingsDialog::accept()
     settings.goal_point.setX(ui->goal_point_x->value());
     settings.goal_point.setY(ui->goal_point_y->value());
     settings.node_selector_method = static_cast<AStar::NodeSelectorMethod>(ui->node_selector_method->currentData().toInt());
+    settings.node_selector_heuristic_method = static_cast<AStar::NodeSelectorHeuristicMethod>(ui->node_selector_heuristic_method->currentData().toInt());
 
     QDialog::accept();      // Closes dialog and emits accepted()
+}
+
+void SettingsDialog::onNodeSelectorMethodChanged()
+{
+    ui->node_selector_heuristic_method->setEnabled(static_cast<AStar::NodeSelectorMethod>(ui->node_selector_method->currentData().toInt()) == AStar::NodeSelectorLowestPriorityMap);
 }

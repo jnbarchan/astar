@@ -1,8 +1,11 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include <QGraphicsView>
 #include <QMainWindow>
 
+#include "astargraphicsscene.h"
+#include "astargraphicsview.h"
 #include "settingsdialog.h"
 
 QT_BEGIN_NAMESPACE
@@ -19,16 +22,30 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    bool running_async() const;
+    void setRunning_async(bool newRunning_async);
+
 private slots:
     void actionSettings();
     void actionRun();
+    void actionRun_Animation();
     void actionExit();
+    void onAStarNodeStatusChanged(Node node, AStar::NodeState state);
 
 private:
     Ui::MainWindow *ui;
 
+    AStarGraphicsScene *grsc;
+    AStarGraphicsView *grvw;
     SettingsDialog::Settings settings;
 
-    void do_aStar();
+    bool _running_async;
+
+    AStar aStar;
+
+    void setAStarSceneFromSettings();
+    void do_aStar_init(bool show_progress);
+    void do_aStar_sync();
+    void do_aStar_async();
 };
 #endif // MAINWINDOW_H

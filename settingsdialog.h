@@ -19,6 +19,7 @@ public:
         int x_coord_size, y_coord_size;
         QPoint start_point, goal_point;
         AStar::NodeSelectorMethod node_selector_method;
+        AStar::NodeSelectorHeuristicMethod node_selector_heuristic_method;
     };
 
     explicit SettingsDialog(Settings &settings, QWidget *parent = nullptr);
@@ -26,6 +27,9 @@ public:
 
 protected:
     void accept() override;
+
+private slots:
+    void onNodeSelectorMethodChanged();
 
 private:
     Ui::SettingsDialog *ui;

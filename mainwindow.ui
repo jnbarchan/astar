@@ -28,7 +28,10 @@
      <string>Menu</string>
     </property>
     <addaction name="actionSettings"/>
+    <addaction name="separator"/>
     <addaction name="actionRun"/>
+    <addaction name="actionRun_Animation"/>
+    <addaction name="separator"/>
     <addaction name="actionExit"/>
    </widget>
    <addaction name="menuMenu"/>
@@ -47,6 +50,11 @@
   <action name="actionExit">
    <property name="text">
     <string>Exit</string>
+   </property>
+  </action>
+  <action name="actionRun_Animation">
+   <property name="text">
+    <string>Run Animation</string>
    </property>
   </action>
  </widget>

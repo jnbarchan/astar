@@ -31,6 +31,8 @@ private slots:
     void actionRun_Animation();
     void actionExit();
     void onAStarNodeStatusChanged(Node node, AStar::NodeState state);
+    void onAStarSceneMouseClicked(const QPoint &coords);
+    void onAStarSceneItemDragged(QGraphicsItem *item);
 
 private:
     Ui::MainWindow *ui;
@@ -43,6 +45,10 @@ private:
 
     AStar aStar;
 
+    void initAStarScene();
+    void clearAStarSceneBlocks();
+    void removeAStarSceneBlock(const QPoint &coords);
+    void addAStarSceneBlock(const QPoint &coords);
     void setAStarSceneFromSettings();
     void do_aStar_init(bool show_progress);
     void do_aStar_sync();

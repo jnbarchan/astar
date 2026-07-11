@@ -13,30 +13,36 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
-    QLayout *central_layout = new QVBoxLayout;
-    ui->centralwidget->setLayout(central_layout);
+    QBoxLayout *central_layout = static_cast<QBoxLayout *>(ui->centralwidget->layout());
+    Q_ASSERT(central_layout);
 
+    grvw = ui->graphicsView;
     grsc = new AStarGraphicsScene(this);
-    grvw = new AStarGraphicsView(grsc, this);
-    central_layout->addWidget(grvw);
+    grvw->setSceneOverride(grsc);
 
     connect(ui->actionSettings, &QAction::triggered, this, &MainWindow::actionSettings);
     connect(ui->actionRun, &QAction::triggered, this, &MainWindow::actionRun);
     connect(ui->actionRun_Animation, &QAction::triggered, this, &MainWindow::actionRun_Animation);
     connect(ui->actionExit, &QAction::triggered, this, &MainWindow::actionExit);
 
+    connect(grsc, &AStarGraphicsScene::aStarMouseClicked, this, &MainWindow::onAStarSceneMouseClicked);
+    connect(grsc, &AStarGraphicsScene::aStarItemDragged, this, &MainWindow::onAStarSceneItemDragged);
+
     settings.x_coord_size = 20;
     settings.y_coord_size = 20;
     settings.start_point = QPoint(1, 1);
     settings.goal_point = QPoint(settings.x_coord_size - 2, settings.x_coord_size - 2);
     settings.edge_length = 1000;
+    settings.animation_delay = 50;
     settings.node_selector_method = AStar::NodeSelectorLowestPriorityMap;
     settings.node_selector_heuristic_method = AStar::NodeSelectorHeuristicEuclideanWeighted;
 
+    initAStarScene();
     setAStarSceneFromSettings();
 
     connect(&aStar, &AStar::findPathAsyncStarted, this, [this]() { setRunning_async(true); } );
     connect(&aStar, &AStar::findPathAsyncStopped, this, [this]() { setRunning_async(false); } );
+    _running_async = false;
     setRunning_async(false);
 }
 
@@ -48,17 +54,82 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-void MainWindow::setAStarSceneFromSettings()
+void MainWindow::initAStarScene()
 {
     grsc->clear();
 
     QRect scene_rect(0, 0, settings.x_coord_size, settings.y_coord_size);
     grsc->setSceneRect(scene_rect);
 
-    QGraphicsItem *start = grsc->addEllipse(0.1, 0.1, 0.8, 0.8, QPen(Qt::NoPen), QBrush(Qt::green));
-    start->setPos(settings.start_point);
-    QGraphicsItem *goal = grsc->addEllipse(0.1, 0.1, 0.8, 0.8, QPen(Qt::NoPen), QBrush(Qt::red));
-    goal->setPos(settings.goal_point);
+    AStarGraphicsStartItem *startItem = new AStarGraphicsStartItem();
+    startItem->setFlag(QGraphicsItem::ItemIsMovable);
+    grsc->addItem(startItem);
+    startItem->setPos(settings.start_point);
+    AStarGraphicsGoalItem *goalItem = new AStarGraphicsGoalItem();
+    goalItem->setFlag(QGraphicsItem::ItemIsMovable);
+    grsc->addItem(goalItem);
+    goalItem->setPos(settings.goal_point);
+
+    clearAStarSceneBlocks();
+}
+
+void MainWindow::clearAStarSceneBlocks()
+{
+    aStar.blocked_coords = {};
+    for (QGraphicsItem *item : grsc->items())
+        if (item->type() == AStarGraphicsBlockItem::Type)
+        {
+            grsc->removeItem(item);
+            delete item;
+        }
+}
+
+void MainWindow::removeAStarSceneBlock(const QPoint &coords)
+{
+    aStar.blocked_coords.remove(coords);
+    for (QGraphicsItem *item : grsc->items(coords + QPointF{0.5, 0.5}))
+        if (item->type() == AStarGraphicsBlockItem::Type)
+        {
+            grsc->removeItem(item);
+            delete item;
+        }
+}
+
+void MainWindow::addAStarSceneBlock(const QPoint &coords)
+{
+    aStar.blocked_coords.insert(coords);
+    AStarGraphicsBlockItem *blockItem = new AStarGraphicsBlockItem();
+    grsc->addItem(blockItem);
+    blockItem->setPos(coords);
+}
+
+void MainWindow::setAStarSceneFromSettings()
+{
+    QRect scene_rect(0, 0, settings.x_coord_size, settings.y_coord_size);
+    grsc->setSceneRect(scene_rect);
+
+    for (QGraphicsItem *item : grsc->items())
+        if (item->type() == AStarGraphicsNodeItem::Type)
+        {
+            grsc->removeItem(item);
+            delete item;
+        }
+
+    QList<QGraphicsItem *> items = grsc->itemsOfType(AStarGraphicsStartItem::Type);
+    Q_ASSERT(items.length() == 1);
+    AStarGraphicsStartItem *startItem = qgraphicsitem_cast<AStarGraphicsStartItem *>(items.first());
+    Q_ASSERT(startItem);
+    startItem->setPos(settings.start_point);
+    items = grsc->itemsOfType(AStarGraphicsGoalItem::Type);
+    Q_ASSERT(items.length() == 1);
+    AStarGraphicsGoalItem *goalItem = qgraphicsitem_cast<AStarGraphicsGoalItem *>(items.first());
+    Q_ASSERT(goalItem);
+    goalItem->setPos(settings.goal_point);
+
+    BlockedCoords blocked = aStar.blocked_coords;
+    for (const QPoint &coords : blocked)
+        if (!scene_rect.contains(coords))
+            removeAStarSceneBlock(coords);
 }
 
 
@@ -117,6 +188,7 @@ void MainWindow::do_aStar_init(bool show_progress)
     aStar.setShow_progress(show_progress);
     aStar.set_coord_sizes(settings.x_coord_size, settings.y_coord_size);
     aStar.set_edge_length(settings.edge_length);
+    aStar.set_animation_delay(settings.animation_delay);
     aStar.set_node_selector_method(settings.node_selector_method);
     aStar.set_node_selector_heuristic_method(settings.node_selector_heuristic_method);
 
@@ -157,12 +229,15 @@ void MainWindow::do_aStar_async()
 
 void MainWindow::onAStarNodeStatusChanged(Node node, AStar::NodeState state)
 {
-    AStarGraphicsNodeItem *current = qgraphicsitem_cast<AStarGraphicsNodeItem *>(grsc->itemAt(node.coords, QTransform()));
+    AStarGraphicsNodeItem *current = qgraphicsitem_cast<AStarGraphicsNodeItem *>(grsc->itemAt(node.coords + QPointF{0.5, 0.5}, QTransform()));
     switch (state)
     {
     case AStar::StateRemoved:
         if (current != nullptr)
+        {
             grsc->removeItem(current);
+            delete current;
+        }
         break;
     case AStar::StateCurrent:
     case AStar::StateOpen:
@@ -170,8 +245,7 @@ void MainWindow::onAStarNodeStatusChanged(Node node, AStar::NodeState state)
     case AStar::StatePath:
         if (current == nullptr)
         {
-            current = new AStarGraphicsNodeItem(0.1, 0.1, 0.8, 0.8);
-            current->setPen(Qt::NoPen);
+            current = new AStarGraphicsNodeItem();
             grsc->addItem(current);
         }
         QColor color;
@@ -187,5 +261,40 @@ void MainWindow::onAStarNodeStatusChanged(Node node, AStar::NodeState state)
         current->setBrush(color);
         current->setPos(node.coords);
         break;
+    }
+}
+
+void MainWindow::onAStarSceneMouseClicked(const QPoint &coords)
+{
+    QRect scene_rect(0, 0, settings.x_coord_size, settings.y_coord_size);
+    if (!scene_rect.contains(coords))
+        return;
+    QGraphicsItem *item = grsc->itemAt(coords + QPointF{0.5, 0.5}, QTransform());
+    if (item && item->type() != AStarGraphicsBlockItem::Type)
+        return;
+    if (aStar.blocked_coords.contains(coords))
+        removeAStarSceneBlock(coords);
+    else
+        addAStarSceneBlock(coords);
+}
+
+void MainWindow::onAStarSceneItemDragged(QGraphicsItem *item)
+{
+    QRect scene_rect(0, 0, settings.x_coord_size, settings.y_coord_size);
+    QPointF scenePosF = item->scenePos() + QPointF(0.5, 0.5);
+    QPoint scenePos(scenePosF.x(), scenePosF.y());
+    if (item->type() == AStarGraphicsStartItem::Type)
+    {
+        if (!scene_rect.contains(scenePos) || aStar.blocked_coords.contains(scenePos))
+            scenePos = settings.start_point;
+        settings.start_point = scenePos;
+        item->setPos(settings.start_point);
+    }
+    else if (item->type() == AStarGraphicsGoalItem::Type)
+    {
+        if (!scene_rect.contains(scenePos) || aStar.blocked_coords.contains(scenePos))
+            scenePos = settings.goal_point;
+        settings.goal_point = scenePos;
+        item->setPos(settings.goal_point);
     }
 }

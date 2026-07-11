@@ -125,7 +125,7 @@ AStar::AStar(QObject *parent)
     nodeSelector = &AStar::node_first_f_score;
     nodeSelectorHeuristic = nullptr;
 
-    async_timer.setInterval(50);
+    set_animation_delay(50);
     connect(&async_timer, &QTimer::timeout, this, &AStar::async_timer_timeout);
 }
 
@@ -148,6 +148,11 @@ void AStar::set_coord_sizes(int x, int y)
 void AStar::set_edge_length(int new_edge_length)
 {
     edge_length = new_edge_length;
+}
+
+void AStar::set_animation_delay(int new_animation_delay)
+{
+    async_timer.setInterval(new_animation_delay);
 }
 
 void AStar::set_node_selector_method(NodeSelectorMethod nodeSelectorMethod)
@@ -358,11 +363,10 @@ void AStar::find_path_step()
         int g_score_current = g_score.value(current_node);
         int f_score_current = f_score.value(current_node);
 
-        //TEMPORARY
-        if (show_progress())
-            qDebug("Closing (%d,%d) g=%d h=%d f=%d",
-                   current_node.coords.x(), current_node.coords.y(),
-                   g_score_current, f_score_current - g_score_current, f_score_current);
+        // if (show_progress())
+        //     qDebug("Closing (%d,%d) g=%d h=%d f=%d",
+        //            current_node.coords.x(), current_node.coords.y(),
+        //            g_score_current, f_score_current - g_score_current, f_score_current);
 
         bool removed = open_set.remove(current_node, f_score_current);
         Q_ASSERT(removed);
@@ -544,5 +548,6 @@ NodeList AStar::get_neighbors(const Node &node) const
 
 bool AStar::neighbor_traversable(const Node &from, const Node &to) const
 {
-    return true;
+    Q_UNUSED(from);
+    return !blocked_coords.contains(to.coords);
 }

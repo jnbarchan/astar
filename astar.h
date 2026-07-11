@@ -40,6 +40,7 @@ typedef QSet<Node> NodeSet;
 typedef QMap<int, NodeSet> NodePriorityMap;
 typedef QHash<Node, int> NodeCost;
 typedef QHash<Node, Node> CameFrom;
+typedef QSet<QPoint> BlockedCoords;
 
 class OpenSet
 {
@@ -79,12 +80,16 @@ public:
     Q_ENUM(NodeSelectorHeuristicMethod);
     enum NodeState { StateRemoved, StateCurrent, StateOpen, StateClosed, StatePath };
     Q_ENUM(NodeState);
+
     enum FindPathStep { StepPickCurrent, StepAddNeighbors };
+
+    BlockedCoords blocked_coords;
 
     bool show_progress() const;
     void setShow_progress(bool newShow_progress);
     void set_coord_sizes(int x, int y);
     void set_edge_length(int new_edge_length);
+    void set_animation_delay(int new_animation_delay);
     void set_node_selector_method(NodeSelectorMethod nodeSelectorMethod);
     void set_node_selector_heuristic_method(NodeSelectorHeuristicMethod nodeSelectorHeuristicMethod);
     NodeList find_path(const QPoint &startCoords, const QPoint &goalCoords);

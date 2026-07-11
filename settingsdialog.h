@@ -21,6 +21,7 @@ public:
         int edge_length;
         AStar::NodeSelectorMethod node_selector_method;
         AStar::NodeSelectorHeuristicMethod node_selector_heuristic_method;
+        int animation_delay;
     };
 
     explicit SettingsDialog(Settings &settings, QWidget *parent = nullptr);
@@ -30,6 +31,7 @@ protected:
     void accept() override;
 
 private slots:
+    void onAnimationDelayValueChanged(int value);
     void onNodeSelectorMethodChanged();
 
 private:

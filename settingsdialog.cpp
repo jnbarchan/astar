@@ -16,6 +16,9 @@ SettingsDialog::SettingsDialog(Settings &settings, QWidget *parent)
     ui->goal_point_y->setValue(settings.goal_point.y());
 
     ui->edge_length->setValue(settings.edge_length);
+    ui->animation_delay->setValue(settings.animation_delay);
+    connect(ui->animation_delay, &QSlider::valueChanged, this, &SettingsDialog::onAnimationDelayValueChanged);
+    onAnimationDelayValueChanged(ui->animation_delay->value());
 
     ui->node_selector_method->clear();
     ui->node_selector_method->addItem("node_first_f_score", AStar::NodeSelectorFirst);
@@ -55,10 +58,16 @@ void SettingsDialog::accept()
     settings.goal_point.setX(ui->goal_point_x->value());
     settings.goal_point.setY(ui->goal_point_y->value());
     settings.edge_length = ui->edge_length->value();
+    settings.animation_delay = ui->animation_delay->value();
     settings.node_selector_method = static_cast<AStar::NodeSelectorMethod>(ui->node_selector_method->currentData().toInt());
     settings.node_selector_heuristic_method = static_cast<AStar::NodeSelectorHeuristicMethod>(ui->node_selector_heuristic_method->currentData().toInt());
 
     QDialog::accept();      // Closes dialog and emits accepted()
+}
+
+void SettingsDialog::onAnimationDelayValueChanged(int value)
+{
+    ui->animation_delay->setToolTip(QString::number(value));
 }
 
 void SettingsDialog::onNodeSelectorMethodChanged()

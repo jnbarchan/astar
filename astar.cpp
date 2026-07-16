@@ -62,15 +62,15 @@ bool OpenSet::isEmpty() const
     __builtin_unreachable();
 }
 
-bool OpenSet::contains(const Node &node, int f_score) const
+bool OpenSet::contains(const Node *node, int f_score) const
 {
     switch (_implementation)
     {
     case ImplementationSet:
         Q_UNUSED(f_score);
-        return _set.contains(node);
+        return _set.contains(const_cast<Node *>(node));
     case ImplementationPriorityMap:
-        return _priority_map.value(f_score).contains(node);
+        return _priority_map.value(f_score).contains(const_cast<Node *>(node));
     }
     __builtin_unreachable();
 }
@@ -81,32 +81,32 @@ void OpenSet::clear()
     _priority_map.clear();
 }
 
-void OpenSet::add(const Node &node, int f_score)
+void OpenSet::add(const Node *node, int f_score)
 {
     switch (_implementation)
     {
     case ImplementationSet:
         Q_UNUSED(f_score);
-        _set.insert(node);
+        _set.insert(const_cast<Node *>(node));
         return;
     case ImplementationPriorityMap:
-        _priority_map[f_score].insert(node);
+        _priority_map[f_score].insert(const_cast<Node *>(node));
         return;
     }
     __builtin_unreachable();
 }
 
-bool OpenSet::remove(const Node &node, int f_score)
+bool OpenSet::remove(const Node *node, int f_score)
 {
     switch (_implementation)
     {
     case ImplementationSet:
         Q_UNUSED(f_score);
-        return _set.remove(node);
+        return _set.remove(const_cast<Node *>(node));
     case ImplementationPriorityMap:
         if (!_priority_map.contains(f_score))
             return false;
-        if (!_priority_map[f_score].remove(node))
+        if (!_priority_map[f_score].remove(const_cast<Node *>(node)))
             return false;
         if (_priority_map[f_score].isEmpty())
             _priority_map.remove(f_score);
@@ -127,6 +127,11 @@ AStar::AStar(QObject *parent)
 
     set_animation_delay(50);
     connect(&async_timer, &QTimer::timeout, this, &AStar::async_timer_timeout);
+}
+
+AStar::~AStar()
+{
+    clear_nodes_created();
 }
 
 bool AStar::show_progress() const
@@ -179,6 +184,7 @@ void AStar::set_node_selector_heuristic_method(NodeSelectorHeuristicMethod nodeS
     }
     this->nodeSelectorHeuristicMethod = nodeSelectorHeuristicMethod;
 }
+
 
 // A* finds a path from start to goal.
 // h is the heuristic function. h(n) estimates the cost to reach goal from node n.
@@ -263,6 +269,64 @@ void AStar::emit_node_status_changed(const Node &node, NodeState state)
         emit nodeStatusChanged(node, state);
 }
 
+
+int AStar::g_score_node(const Node &node) const
+{
+#if SCORES_IN_NODE
+    return node.g_score;
+#else
+    return g_score_map.value(node);
+#endif
+}
+
+int AStar::g_score_node(const Node &node, int default_value) const
+{
+#if SCORES_IN_NODE
+    Q_UNUSED(default_value);
+    return node.g_score;
+#else
+    return g_score_map.value(node, default_value);
+#endif
+}
+
+void AStar::set_g_score_node(Node &node, int value)
+{
+#if SCORES_IN_NODE
+    node.g_score = value;;
+#else
+    g_score_map[node] = value;;
+#endif
+}
+
+int AStar::f_score_node(const Node &node) const
+{
+#if SCORES_IN_NODE
+    return node.f_score;
+#else
+    return f_score_map.value(node);
+#endif
+}
+
+int AStar::f_score_node(const Node &node, int default_value) const
+{
+#if SCORES_IN_NODE
+    Q_UNUSED(default_value);
+    return node.f_score;
+#else
+    return f_score_map.value(node, default_value);
+#endif
+}
+
+void AStar::set_f_score_node(Node &node, int value)
+{
+#if SCORES_IN_NODE
+    node.f_score = value;;
+#else
+    f_score_map[node] = value;;
+#endif
+}
+
+
 bool AStar::find_path_start()
 {
     QRect rect(0, 0, x_coord_size, y_coord_size);
@@ -274,32 +338,30 @@ bool AStar::find_path_start()
     stats.node_lowest_f_score_count = 0;
     stats.total_open_set_count = 0;
 
-    current_node = Node({-1, -1});
-    Node start(start_coords);
+    clear_nodes_created();
+
+    current_node = nullptr;
+    Node *start = find_or_create_node(start_coords);
 
     // // For node n, came_from[n] is the node immediately preceding it on the cheapest path from the start
     // // to n currently known.
     // came_from := an empty map
-    came_from.clear();
 
     // // For node n, g_score[n] is the currently known cost of the cheapest path from start to n.
     // g_score := map with default value of Infinity
     // g_score[start] := 0
-    g_score.clear();
-    g_score[start] = 0;
+    set_g_score_node(*start, 0);
 
     // // For node n, f_score[n] := g_score[n] + h(n). f_score[n] represents our current best guess as to
     // // how cheap a path could be from start to finish if it goes through n.
     // f_score := map with default value of Infinity
     // f_score[start] := h(start)
-    f_score.clear();
-    f_score[start] = (this->*nodeSelectorHeuristic)(start, goal_coords);
+    set_f_score_node(*start, (this->*nodeSelectorHeuristic)(*start, goal_coords));
 
     // // The set of discovered nodes that may need to be (re-)expanded.
     // // Initially, only the start node is known.
     // // This is usually implemented as a min-heap or priority queue rather than a hash-set.
     // open_set := {start}
-    open_set.clear();
     switch (nodeSelectorMethod)
     {
     case NodeSelectorFirst:
@@ -308,8 +370,8 @@ bool AStar::find_path_start()
     case NodeSelectorLowestPriorityMap:
         open_set.setImplementation(OpenSet::ImplementationPriorityMap); break;
     }
-    open_set.add(start, f_score[start]);
-    emit_node_status_changed(start, StateOpen);
+    open_set.add(start, f_score_node(*start));
+    emit_node_status_changed(*start, StateOpen);
 
     stats.longest_open_set_count = 1;
     stats.total_open_set_count = 1;
@@ -336,8 +398,8 @@ void AStar::find_path_step()
 
         stats.iterations++;
         current_node = (this->*nodeSelector)();
-        emit_node_status_changed(current_node, StateCurrent);
-        if (current_node.coords == goal_coords)
+        emit_node_status_changed(*current_node, StateCurrent);
+        if (current_node->coords == goal_coords)
             return;
 
         findPathNextStep = StepAddNeighbors;
@@ -358,37 +420,30 @@ void AStar::find_path_step()
         //             if neighbor not in open_set
         //                 open_set.add(neighbor)
 
-        Q_ASSERT(g_score.contains(current_node));
-        Q_ASSERT(f_score.contains(current_node));
-        int g_score_current = g_score.value(current_node);
-        int f_score_current = f_score.value(current_node);
-
-        // if (show_progress())
-        //     qDebug("Closing (%d,%d) g=%d h=%d f=%d",
-        //            current_node.coords.x(), current_node.coords.y(),
-        //            g_score_current, f_score_current - g_score_current, f_score_current);
+        int g_score_current = g_score_node(*current_node);
+        int f_score_current = f_score_node(*current_node);
 
         bool removed = open_set.remove(current_node, f_score_current);
         Q_ASSERT(removed);
         if (removed)
-            emit_node_status_changed(current_node, StateClosed);
+            emit_node_status_changed(*current_node, StateClosed);
 
-        NodeList neighbors = get_neighbors(current_node);
-        for (const Node &neighbor : neighbors)
+        NodeList neighbors = get_neighbors(*current_node);
+        for (Node *neighbor : neighbors)
         {
             int tentative_g_score = g_score_current + edge_length;
-            int g_score_neighbor = g_score.value(neighbor, INT_MAX);
+            int g_score_neighbor = g_score_node(*neighbor, INT_MAX);
             if (tentative_g_score < g_score_neighbor)
             {
-                int tentative_f_score = tentative_g_score + (this->*nodeSelectorHeuristic)(neighbor, goal_coords);
-                int f_score_neighbor = f_score.value(neighbor, INT_MAX);
+                int tentative_f_score = tentative_g_score + (this->*nodeSelectorHeuristic)(*neighbor, goal_coords);
+                int f_score_neighbor = f_score_node(*neighbor, INT_MAX);
                 came_from[neighbor] = current_node;
-                g_score[neighbor] = tentative_g_score;
-                f_score[neighbor] = tentative_f_score;
+                set_g_score_node(*neighbor, tentative_g_score);
+                set_f_score_node(*neighbor, tentative_f_score);
                 if (f_score_neighbor != INT_MAX)
                     open_set.remove(neighbor, f_score_neighbor);
                 open_set.add(neighbor, tentative_f_score);
-                emit_node_status_changed(neighbor, StateOpen);
+                emit_node_status_changed(*neighbor, StateOpen);
                 stats.total_open_set_count++;
                 int open_set_count = open_set.count();
                 if (open_set_count > stats.longest_open_set_count)
@@ -405,7 +460,7 @@ void AStar::find_path_step()
 
 bool AStar::find_path_is_finished()
 {
-    return open_set.isEmpty() || current_node.coords == goal_coords;
+    return open_set.isEmpty() || (current_node != nullptr && current_node->coords == goal_coords);
 }
 
 void AStar::find_path_finish()
@@ -415,16 +470,16 @@ void AStar::find_path_finish()
 
 NodeList AStar::find_path_result()
 {
-    if (open_set.isEmpty() || current_node.coords != goal_coords)
+    if (open_set.isEmpty() || (current_node == nullptr || current_node->coords != goal_coords))
         return NodeList();
     NodeList path = reconstruct_path(current_node);
-    for (const Node &node : path)
-        emit_node_status_changed(node, StatePath);
+    for (const Node *node : path)
+        emit_node_status_changed(*node, StatePath);
     return path;
 }
 
 
-NodeList AStar::reconstruct_path(const Node &reached) const
+NodeList AStar::reconstruct_path(Node *reached) const
 {
     // total_path := {current}
     // while current in came_from.keys:
@@ -432,7 +487,7 @@ NodeList AStar::reconstruct_path(const Node &reached) const
     //     total_path.prepend(current)
     // return total_path
     NodeList total_path = {reached};
-    Node current(reached);
+    Node *current(reached);
     while (came_from.contains(current))
     {
         current = came_from.value(current);
@@ -475,36 +530,33 @@ int AStar::heuristic_euclidean_weighted(const Node &reached, const QPoint &goalC
     return 2 * std::lround(std::hypot(delta.x(), delta.y()) * edge_length);
 }
 
-Node AStar::node_first_f_score() const
+Node *AStar::node_first_f_score() const
 {
     const NodeSet &set(open_set.set());
     auto it = set.cbegin();
-    Node lowest = *it;
-    Q_ASSERT(f_score.contains(lowest));
+    Node *lowest = *it;
     stats.node_lowest_f_score_count++;
     return lowest;
 }
 
-Node AStar::node_lowest_sequential_f_score() const
+Node *AStar::node_lowest_sequential_f_score() const
 {
     const NodeSet &set(open_set.set());
     auto it = set.cbegin(), end = set.cend();
-    Node lowest = *it;
-    Q_ASSERT(f_score.contains(lowest));
+    Node *lowest = *it;
     stats.node_lowest_f_score_count++;
     while (++it != end)
     {
         stats.node_lowest_f_score_count++;
-        Node node(*it);
+        Node *node(*it);
         Q_ASSERT(node != lowest);
-        Q_ASSERT(f_score.contains(node));
-        if (f_score.value(node) < f_score.value(lowest))
+        if (f_score_node(*node) < f_score_node(*lowest))
             lowest = node;
     }
     return lowest;
 }
 
-Node AStar::node_lowest_priority_map_f_score() const
+Node *AStar::node_lowest_priority_map_f_score() const
 {
     const NodePriorityMap &priority_map(open_set.priority_map());
     for (auto it = priority_map.cbegin(); it != priority_map.cend(); it++)
@@ -517,30 +569,55 @@ Node AStar::node_lowest_priority_map_f_score() const
         auto best = *it2;
         // algorithm picks Node with longest g_score
         while (++it2 != set.cend())
-            if (g_score[*it2] > g_score[best])
+            if (g_score_node(**it2) > g_score_node(*best))
                 best = *it2;
         return best;
     }
     Q_ASSERT(false);
-    return Node();
+    __builtin_unreachable();
 }
 
 
-NodeList AStar::get_neighbors(const Node &node) const
+void AStar::clear_nodes_created()
+{
+    for (auto it = nodes_created.begin(); it != nodes_created.end(); it++)
+        delete it.value();
+    nodes_created.clear();
+#if !SCORES_IN_NODE
+    g_score_map.clear();
+    f_score_map.clear();
+#endif
+    came_from.clear();
+    open_set.clear();
+}
+
+Node *AStar::find_or_create_node(const QPoint &coords)
+{
+    auto it = nodes_created.find(coords);
+    if (it != nodes_created.end())
+        return it.value();
+    Node *node = new Node(coords);
+    set_g_score_node(*node, INT_MAX);
+    set_f_score_node(*node, INT_MAX);
+    nodes_created.insert(coords, node);
+    return node;
+}
+
+NodeList AStar::get_neighbors(const Node &node)
 {
     NodeList neighbors;
     int x, y;
     if ((x = node.coords.x() - 1) >= 0)
-        neighbors.append(Node(QPoint(x, node.coords.y())));
+        neighbors.append(find_or_create_node({x, node.coords.y()}));
     if ((x = node.coords.x() + 1) < x_coord_size)
-        neighbors.append(Node(QPoint(x, node.coords.y())));
+        neighbors.append(find_or_create_node({x, node.coords.y()}));
     if ((y = node.coords.y() - 1) >= 0)
-        neighbors.append(Node(QPoint(node.coords.x(), y)));
+        neighbors.append(find_or_create_node({node.coords.x(), y}));
     if ((y = node.coords.y() + 1) < y_coord_size)
-        neighbors.append(Node(QPoint(node.coords.x(), y)));
+        neighbors.append(find_or_create_node({node.coords.x(), y}));
 
     for (int i = neighbors.length() - 1; i >= 0; i--)
-        if (!neighbor_traversable(node, neighbors.at(i)))
+        if (!neighbor_traversable(node, *neighbors.at(i)))
             neighbors.removeAt(i);
 
     return neighbors;
